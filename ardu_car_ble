@@ -1,0 +1,60 @@
+/* Encender y apagar el led 13. El carácter "a" enciende el led 13 y el "b" lo apaga.
+ 
+  Conexion del Modulo Bluetooth HC-06 y el Arduino
+  ARDUINO    Bluetooth HC-06
+  19 (RX1)       TX
+  18 (TX1)       RX
+  5V           VCC
+  GND          GND
+ 
+*/
+#include <SoftwareSerial.h>
+char recibido; // variable encargada de almacenar el carácter recibido desde el móvil
+int led13 = 13;
+
+/*Cambiar el nombre del grupo*/
+/*
+void setup()  {
+  Serial.begin(9600);
+  Serial1.begin(9600);
+
+  while (!Serial1) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  Serial.println("Enter AT commands:");
+  delay(100);
+ }
+
+void loop()  {
+  
+  if(Serial1.available()>0){
+    recibido = Serial1.read();  
+    Serial.print(recibido);
+  }
+
+  if(Serial.available()>0){
+    recibido = Serial.read();  
+    Serial1.write(recibido);
+  }
+ 
+}
+*/
+
+void setup()  {
+  Serial1.begin(9600);
+  pinMode(led13, OUTPUT);
+}
+
+void loop()  {
+  if (Serial1.available()) {
+    recibido = Serial1.read();
+
+    switch (recibido) {
+      case 'a': digitalWrite(led13, HIGH);
+        break;
+      case 'b': digitalWrite(led13, LOW);
+        break;
+
+    }
+  }
+}
