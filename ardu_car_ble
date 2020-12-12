@@ -1,60 +1,216 @@
-/* Encender y apagar el led 13. El carácter "a" enciende el led 13 y el "b" lo apaga.
- 
-  Conexion del Modulo Bluetooth HC-06 y el Arduino
-  ARDUINO    Bluetooth HC-06
-  19 (RX1)       TX
-  18 (TX1)       RX
-  5V           VCC
-  GND          GND
- 
-*/
+#include <AFMotor.h>
 #include <SoftwareSerial.h>
-char recibido; // variable encargada de almacenar el carácter recibido desde el móvil
-int led13 = 13;
+#include "SR04.h"
 
-/*Cambiar el nombre del grupo*/
-/*
-void setup()  {
-  Serial.begin(9600);
+//Ultrasonic sensor defs
+#define TRIG_PIN A1
+#define ECHO_PIN A2
+#define MAX_DISTANCE_POSSIBLE 200 
+
+SR04 sonar = SR04(ECHO_PIN,TRIG_PIN);
+int curDist = 0; //Distance read
+
+char rx_ch; //Charter read from bluetooth
+int led13 = 13; //Onboard led
+
+
+//Car weels
+#define FRONT_RIGHT 4
+#define FRONT_LEFT  3
+#define REAR_RIGHT  1
+#define REAR_LEFT   2
+
+//Automation steps
+#define CAR_STOP 0
+#define CAR_FORWARD 1
+#define CAR_BACKWARD 2
+#define CAR_TURNL 3
+#define CAR_TURNR 4
+int carState =  CAR_STOP;
+
+AF_DCMotor m_front_right(FRONT_RIGHT);
+AF_DCMotor m_front_left(FRONT_LEFT);
+AF_DCMotor m_rear_right(REAR_RIGHT);
+AF_DCMotor m_rear_left(REAR_LEFT);
+#define MAX_SPEED 250
+#define HALF_SPEED 250
+#define MIN_DISTANCE 50
+
+int wait;
+bool auto_mode;
+void setup() 
+{
+  //Set initial speed of the motor & stop
+  speed_engine(MAX_SPEED);
+  stop_engine();
+  wait = 1;
+  auto_mode=false;
+
+  //Bluetooth
   Serial1.begin(9600);
-
-  while (!Serial1) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  Serial.println("Enter AT commands:");
-  delay(100);
- }
-
-void loop()  {
   
-  if(Serial1.available()>0){
-    recibido = Serial1.read();  
-    Serial.print(recibido);
-  }
-
-  if(Serial.available()>0){
-    recibido = Serial.read();  
-    Serial1.write(recibido);
-  }
- 
-}
-*/
-
-void setup()  {
-  Serial1.begin(9600);
+  //Start onboard led
   pinMode(led13, OUTPUT);
+
+  
+  //Serial output log
+   Serial.begin(9600);
+   delay(1000);
+  
 }
+void loop() 
+{
 
-void loop()  {
+  //Check don't crash
+  curDist = readPing();
+  if (curDist < MIN_DISTANCE) stop_engine(); 
+
+  //Read bluetooth command
   if (Serial1.available()) {
-    recibido = Serial1.read();
+    rx_ch = Serial1.read();
 
-    switch (recibido) {
-      case 'a': digitalWrite(led13, HIGH);
-        break;
-      case 'b': digitalWrite(led13, LOW);
-        break;
+    if(auto_mode) auto_mode=false;
 
+    switch (rx_ch) {
+      case 'l': digitalWrite(led13, HIGH);
+        break;
+      case 'n': digitalWrite(led13, LOW);
+        break;
+      case 'w': run_forward();
+        break;  
+      case 'a': turn_left();
+        break;  
+      case 's': run_backward();
+        break;    
+      case 'd': turn_right();
+        break;  
+      case 'x': stop_engine();
+        break;        
+      case 'p': 
+        stop_engine();
+        auto_mode=true;
+        carState = CAR_STOP;        
+        break;
     }
   }
+
+  if(auto_mode)
+    car_auto();
+
+  delay(500*wait);
+  wait = 1;
+
+}
+
+
+void car_auto()
+{
+
+  switch (carState){
+    case CAR_STOP: 
+      if(curDist > 50) run_forward();      
+      else{
+        turn_right();
+        wait = 2;
+      }
+      break;
+    case CAR_FORWARD:
+      if (curDist < MIN_DISTANCE) stop_engine();      
+      else if(curDist < 50)speed_engine(HALF_SPEED);
+      else speed_engine(MAX_SPEED);
+      
+      break;
+    case CAR_TURNR: 
+      stop_engine();
+      break;
+  }
+  print_status();
+
+  
+}
+
+void run_forward()
+{
+ 
+  m_front_right.run(FORWARD); 
+  m_front_left.run(FORWARD); 
+  m_rear_right.run(FORWARD); 
+  m_rear_left.run(FORWARD); 
+
+  carState = CAR_FORWARD;
+}
+
+void run_backward()
+{
+  speed_engine(HALF_SPEED);
+  m_front_right.run(BACKWARD); 
+  m_front_left.run(BACKWARD); 
+  m_rear_right.run(BACKWARD); 
+  m_rear_left.run(BACKWARD); 
+}
+
+void stop_engine()
+{
+  m_front_right.run(RELEASE);
+  m_front_left.run(RELEASE);
+  m_rear_right.run(RELEASE);
+  m_rear_left.run(RELEASE);
+
+  carState = CAR_STOP;
+}
+
+void turn_left()
+{
+  speed_engine(HALF_SPEED);
+  m_front_right.run(FORWARD);
+  m_front_left.run(BACKWARD);
+  m_rear_right.run(FORWARD);
+  m_rear_left.run(BACKWARD);
+
+  carState = CAR_TURNL;
+}
+
+void turn_right()
+{
+  speed_engine(HALF_SPEED);
+  m_front_right.run(BACKWARD);
+  m_front_left.run(FORWARD);
+  m_rear_right.run(BACKWARD);
+  m_rear_left.run(FORWARD);
+
+  carState = CAR_TURNR;
+}
+
+
+
+void speed_engine(int speed_e)
+{ 
+  m_front_right.setSpeed(speed_e);
+  m_front_left.setSpeed(speed_e);
+  m_rear_right.setSpeed(speed_e);
+  m_rear_left.setSpeed(speed_e);
+  Serial.print("Change speed to: ");
+  Serial.println(speed_e);  
+}
+
+
+int readPing() {
+  delay(70);
+  //unsigned int cm = sonar.ping_cm();
+  long cm = sonar.Distance();  
+  return cm;
+}
+
+void print_status()
+{
+   
+  switch (carState){
+    case CAR_STOP:Serial.print(" stop ");break;
+    case CAR_FORWARD: Serial.print(" run ");break;
+    case CAR_BACKWARD: Serial.print(" back ");break;
+    case CAR_TURNL: Serial.print(" left ");break;
+    case CAR_TURNR: Serial.print(" right ");break;
+  }
+  Serial.print(curDist);
+  Serial.println("cm");
 }
